@@ -1,6 +1,9 @@
 package es.unizar.webeng.lab3
 
 import com.ninjasquad.springmockk.MockkBean
+import io.mockk.every
+import io.mockk.justRun
+import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -12,6 +15,7 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
+import java.util.Optional
 
 private val MANAGER_REQUEST_BODY = { name: String ->
     """
@@ -52,10 +56,17 @@ class ControllerTests {
 
     @Test
     fun `POST is not safe and not idempotent`() {
-        // SETUP - COMPLETE ME!
+        // SETUP
         // Initial state: the collection is empty. No employee exists.
         // Runtime state: the first save stores Mary, Manager, as id 1. The second save stores Mary, Manager, as id 2.
-        TODO("Complete the mock setup for POST test")
+        // Each save allocates a new id (1, then 2): the server state changes on every call.
+        every {
+            employeeRepository.save(any<Employee>())
+        } answers {
+            Employee("Mary", "Manager", 1)
+        } andThenAnswer {
+            Employee("Mary", "Manager", 2)
+        }
 
         mvc
             .post("/employees") {
@@ -85,10 +96,18 @@ class ControllerTests {
                 }
             }
 
-        // VERIFY - COMPLETE ME!
-        // Hint: What repository methods should be called for a POST operation?
-        // What methods should NOT be called? Think about the difference between safe and unsafe operations.
-        TODO("Complete the verification for POST test")
+        // VERIFY
+        // Not safe: save is called. Not idempotent: two identical requests produce two saves
+        // and two different ids. The controller discards the client id, so both saves get id = null.
+        verify(exactly = 2) {
+            employeeRepository.save(Employee("Mary", "Manager", null))
+        }
+        // POST only creates: it never reads, lists or deletes.
+        verify(exactly = 0) {
+            employeeRepository.findById(any())
+            employeeRepository.findAll()
+            employeeRepository.deleteById(any())
+        }
     }
 
     @Test
@@ -96,7 +115,17 @@ class ControllerTests {
         // SETUP
         // Initial state: /employees/1 is Mary, Manager, id 1. /employees/2 has no representation.
         // Runtime state: both stay that way.
-        TODO("Complete the mock setup for GET test")
+        // Id 1 always exists and id 2 never does: the answers are fixed because a read changes nothing.
+        every {
+            employeeRepository.findById(1)
+        } answers {
+            Optional.of(Employee("Mary", "Manager", 1))
+        }
+        every {
+            employeeRepository.findById(2)
+        } answers {
+            Optional.empty()
+        }
 
         mvc.get("/employees/1").andExpect {
             status { isOk() }
@@ -122,10 +151,21 @@ class ControllerTests {
             status { isNotFound() }
         }
 
-        // VERIFY - COMPLETE ME!
-        // Hint: Since GET is safe, what repository methods should NOT be called?
+        // VERIFY
         // Count how many times each method was called based on the test requests.
-        TODO("Complete the verification for GET test")
+        // Idempotent: each id is read twice and both responses match (200 twice, 404 twice).
+        verify(exactly = 2) {
+            employeeRepository.findById(1)
+        }
+        verify(exactly = 2) {
+            employeeRepository.findById(2)
+        }
+        // Safe: no write (save, deleteById). The item GET does not list the collection either.
+        verify(exactly = 0) {
+            employeeRepository.save(any())
+            employeeRepository.deleteById(any())
+            employeeRepository.findAll()
+        }
     }
 
     @Test
@@ -133,7 +173,21 @@ class ControllerTests {
         // SETUP
         // Initial state: /employees/1 has no representation.
         // Runtime state: the first PUT stores Tom, Manager, at id 1. The second PUT leaves that same employee.
-        TODO("Complete the mock setup for PUT test")
+        // First lookup: id 1 is empty, so the controller creates it (201).
+        // Second lookup: Tom is already there, so the controller replaces it (200).
+        every {
+            employeeRepository.findById(1)
+        } answers {
+            Optional.empty()
+        } andThenAnswer {
+            Optional.of(Employee("Tom", "Manager", 1))
+        }
+        // Both saves store the same employee at id 1: no new id is allocated.
+        every {
+            employeeRepository.save(any<Employee>())
+        } answers {
+            Employee("Tom", "Manager", 1)
+        }
 
         mvc
             .put("/employees/1") {
@@ -163,10 +217,21 @@ class ControllerTests {
                 }
             }
 
-        // VERIFY - COMPLETE ME!
-        // Hint: What repository methods should be called for PUT operations?
-        // Think about the controller logic and how many times each method should be invoked.
-        TODO("Complete the verification for PUT test")
+        // VERIFY
+        // Not safe: save is called. Idempotent: both saves store exactly the same state
+        // (Tom, Manager, id 1), even though the status changes from 201 to 200.
+        verify(exactly = 2) {
+            employeeRepository.save(Employee("Tom", "Manager", 1))
+        }
+        // Each PUT looks up the target URI first to choose between create and replace.
+        verify(exactly = 2) {
+            employeeRepository.findById(1)
+        }
+        // PUT replaces one resource: it never deletes or lists.
+        verify(exactly = 0) {
+            employeeRepository.deleteById(any())
+            employeeRepository.findAll()
+        }
     }
 
     @Test
@@ -174,7 +239,11 @@ class ControllerTests {
         // SETUP
         // Initial state: /employees/1 is associated with an employee.
         // Runtime state: the first DELETE removes that association. The second DELETE finds it already gone.
-        TODO("Complete the mock setup for DELETE test")
+        // deleteById returns Unit, so justRun stubs it. It does not fail when the id is already gone.
+        justRun {
+            employeeRepository.deleteById(1)
+        }
+
         mvc.delete("/employees/1").andExpect {
             status { isNoContent() }
         }
@@ -184,24 +253,29 @@ class ControllerTests {
         }
 
         // VERIFY
-        // Hint: What repository methods should be called for DELETE operations?
-        // What methods should NOT be called? Think about the nature of DELETE operations.
-        TODO("Complete the verification for DELETE test")
+        // Not safe: deleteById is called. Idempotent: the second call leaves the same state
+        // (id 1 absent) and still returns 204.
+        verify(exactly = 2) {
+            employeeRepository.deleteById(1)
+        }
+        // DELETE does not check existence first, create anything or list the collection.
+        verify(exactly = 0) {
+            employeeRepository.save(any())
+            employeeRepository.findById(any())
+            employeeRepository.findAll()
+        }
     }
 
     @Test
     fun `GET collection is safe and idempotent`() {
-        // SETUP - COMPLETE ME!
+        // SETUP
         // Initial state: the collection contains exactly Mary, Manager, id 1.
         // Runtime state: the second GET sees that same list.
-        TODO("Complete the mock setup for the collection GET")
-
-        mvc.get("/employees").andExpect {
-            status { isOk() }
-            content {
-                contentType(MediaType.APPLICATION_JSON)
-                json(MANAGER_LIST_BODY)
-            }
+        // The collection always contains only Mary: a list request changes nothing.
+        every {
+            employeeRepository.findAll()
+        } answers {
+            listOf(Employee("Mary", "Manager", 1))
         }
 
         mvc.get("/employees").andExpect {
@@ -212,8 +286,24 @@ class ControllerTests {
             }
         }
 
-        // VERIFY - COMPLETE ME!
-        // Hint: Count the list calls. A safe list must not save, delete, or fetch one id.
-        TODO("Complete the verification for the collection GET")
+        mvc.get("/employees").andExpect {
+            status { isOk() }
+            content {
+                contentType(MediaType.APPLICATION_JSON)
+                json(MANAGER_LIST_BODY)
+            }
+        }
+
+        // VERIFY
+        // Idempotent: the list is read twice and both responses are identical.
+        verify(exactly = 2) {
+            employeeRepository.findAll()
+        }
+        // Safe: no write (save, deleteById). Listing does not read a single id.
+        verify(exactly = 0) {
+            employeeRepository.save(any())
+            employeeRepository.deleteById(any())
+            employeeRepository.findById(any())
+        }
     }
 }
