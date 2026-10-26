@@ -1,6 +1,6 @@
 # Lab 3 Web API -- Project Report
 
-## 1. What I specified
+## What I specified
 
 Before completing the tests, I specified the safety and idempotency of each method of the employee API, following RFC 9110 (§9.2.1 Safe Methods, §9.2.2 Idempotent Methods):
 
@@ -23,7 +23,7 @@ I would know that the tests pass, and that they really prove these properties, w
 - the five tests in `ControllerTests` run without `TODO` and finish successfully with `./gradlew check`,
 - every test verifies both which repository methods were called (and how many times) and which ones were not called, not only the HTTP response.
 
-## 2. What I changed
+## What I changed
 
 - **ControllerTests.kt** (`src/test/kotlin/es/unizar/webeng/lab3/`):
     - Added the imports required by the blocks: `io.mockk.every`, `io.mockk.justRun`, `io.mockk.verify` and `java.util.Optional`.
@@ -33,7 +33,7 @@ I would know that the tests pass, and that they really prove these properties, w
 
 Controller.kt was not changed. The behaviour of the API is exactly the one of the starter.
 
-## 3. Technical decisions
+## Technical decisions
 
 I used only the blocks provided in the guide. For each test, the setup reproduces the "Initial state / Runtime state" comment, and the verification proves the property of the method.
 
@@ -64,7 +64,7 @@ I used only the blocks provided in the guide. For each test, the setup reproduce
 - Verifying only the HTTP responses: the responses alone do not prove that the repository was not written, so every test also checks the methods that must not be called (`exactly = 0`).
 - Changing the controller to make a test pass, which the guide does not allow.
 
-## 4. How I verified
+## How I verified
 
 I ran the following commands:
 
@@ -112,7 +112,7 @@ Results (each request sent twice):
 
 **Observation:** `PUT` on an id that does **not** exist in H2 (for example `/employees/10`) returned `500` instead of `201`. The log shows a `StaleObjectStateException` ("Row was already updated or deleted by another transaction"). The `Employee` id uses `@GeneratedValue`, so when the controller sets the id manually and calls `save`, Hibernate treats the entity as an existing one and the update fails. The `PUT` test does not detect this because the repository is a mock that always answers what the setup says. I did not change the controller, since the guide does not allow it, but this shows the limits of a mock-based test: only a test with the real database (H2) would detect it.
 
-## 5. AI disclosure
+## AI disclosure
 
 - **Tools / skills:** Claude Code (Claude Opus 5.5 and Claude Sonnet 5.5) in VS Code.
 
